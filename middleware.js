@@ -45,25 +45,46 @@ export async function middleware(request) {
     return NextResponse.next();
   }
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  // ⚠️ DIAGNÓSTICO TEMPORAL — solo imprime true/false, nunca el valor real.
+  // Bórralo de este archivo una vez que confirmes en los Runtime Logs de
+  // Vercel cuál de las dos variables llega vacía.
+  console.log(
+    `[diagnóstico-env] NEXT_PUBLIC_SUPABASE_URL presente: ${!!supabaseUrl} | NEXT_PUBLIC_SUPABASE_ANON_KEY presente: ${!!supabaseAnonKey}`
+  );
+
+  // Si faltan las variables, fallamos "cerrado": nunca dejamos pasar a
+  // nadie a una ruta protegida solo porque la configuración esté rota.
+  // Las rutas públicas sí se siguen mostrando (para no tumbar toda la web
+  // por un problema de configuración), pero cualquier ruta que requiera
+  // sesión se manda a /iniciar-sesion en vez de crashear con 500.
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error(
+      '[middleware] Faltan variables de entorno de Supabase en este despliegue. Revisa Vercel → Settings → Environment Variables.'
+    );
+    if (esRutaPublica(pathname)) {
+      return NextResponse.next();
+    }
+    return NextResponse.redirect(new URL('/iniciar-sesion', request.url));
+  }
+
   let response = NextResponse.next({ request: { headers: request.headers } });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
-      cookies: {
-        get(name) {
-          return request.cookies.get(name)?.value;
-        },
-        set(name, value, options) {
-          response.cookies.set({ name, value, ...options });
-        },
-        remove(name, options) {
-          response.cookies.set({ name, value: '', ...options });
-        },
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      get(name) {
+        return request.cookies.get(name)?.value;
       },
-    }
-  );
+      set(name, value, options) {
+        response.cookies.set({ name, value, ...options });
+      },
+      remove(name, options) {
+        response.cookies.set({ name, value: '', ...options });
+      },
+    },
+  });
 
   const {
     data: { user },
